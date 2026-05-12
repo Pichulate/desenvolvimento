@@ -81,7 +81,22 @@
 
 ---
 
-### 5. LLM extrai áreas de autoridade com precisão suficiente para ser confiável
+### 5. O time vai confiar em perfis gerados por IA para tomar decisões de match
+
+**O que assumimos:** a coordenadora — e o time como um todo — vai aceitar psicologicamente usar um perfil gerado automaticamente como insumo para uma decisão de match. Não só achar "interessante", mas realmente substituir a pesquisa manual por isso.
+
+**Por que é arriscado:** match é uma decisão que envolve reputação. Errar um match tem custo visível (sessão desperdiçada, mentor insatisfeito). Mesmo que o perfil seja bom, pode haver resistência em delegar essa etapa para um sistema — especialmente em uma organização que valoriza o julgamento humano nas relações. Confiança técnica (o dado está certo) é diferente de confiança decisória (eu uso isso para decidir).
+
+| Campo | Valor |
+|---|---|
+| Risco | Alto |
+| Certeza atual | Baixa |
+| Como validar | Depois de gerar os primeiros 5 perfis, observar o comportamento real: a usuária usa o perfil para fazer o match ou ainda verifica por fora? Entrevista curta: "o que faria você NÃO usar esse perfil para decidir?" |
+| Prazo | Primeiros dias de uso do MVP |
+
+---
+
+### 6. LLM extrai áreas de autoridade com precisão suficiente para ser confiável
 
 **O que assumimos:** um modelo de linguagem consegue ler os dados coletados e identificar em quais áreas o mentor tem experiência de quem *fez*, não de quem *estudou* — com baixa taxa de alucinação.
 
@@ -98,7 +113,22 @@
 
 ## Logo — validar no sprint 1
 
-### 6. A maioria dos mentores tem presença pública suficiente
+### 6. O pipeline completa em tempo aceitável — menos de 5 minutos
+
+**O que assumimos:** o fluxo completo (busca de fontes + coleta + síntese) termina em menos de 5 minutos por mentor. Esse é o critério de sucesso que a própria usuária definiu.
+
+**Por que é arriscado:** LinkedIn + busca de notícias + chamadas de LLM são operações em série com latência variável. Em mentores com muito conteúdo público, o volume de texto para processar pode aumentar o tempo significativamente.
+
+| Campo | Valor |
+|---|---|
+| Risco | Médio |
+| Certeza atual | Média |
+| Como validar | Medir o tempo end-to-end nos primeiros 10 perfis gerados. Se ultrapassar 5 min consistentemente, identificar o gargalo (coleta vs síntese) e otimizar. |
+| Prazo | Sprint 1 |
+
+---
+
+### 7. A maioria dos mentores tem presença pública suficiente
 
 **O que assumimos:** a maior parte da rede tem material público indexado suficiente (LinkedIn, notícias, entrevistas, posts) para gerar um perfil útil.
 
@@ -205,6 +235,36 @@
 
 ---
 
+### 13. O schema de output cobre tudo que o time precisa para matching
+
+**O que assumimos:** os campos definidos no perfil (áreas de autoridade, histórico, eventos recentes, fontes, indicador de completude) são suficientes para o processo de match da Endeavor — sem campos críticos faltando.
+
+**Por que é arriscado:** o processo de match pode depender de dimensões específicas da Endeavor que não emergem de dados públicos (ex: disponibilidade do mentor, tipo de empresa que prefere atender, histórico de sessões anteriores).
+
+| Campo | Valor |
+|---|---|
+| Risco | Médio |
+| Certeza atual | Média |
+| Como validar | Após primeiros usos reais, perguntar à usuária: "teve alguma decisão de match que você precisou de algo que não estava no perfil?" |
+| Prazo | 2-4 semanas após lançamento |
+
+---
+
+### 14. SQLite suporta o volume da rede de mentores sem degradação
+
+**O que assumimos:** armazenar os perfis de centenas de mentores em SQLite é suficiente em termos de performance e confiabilidade para o MVP.
+
+**Por que é arriscado:** para centenas de registros com texto longo, praticamente sem risco. A questão só se torna real se o scope crescer para milhares ou se houver acesso concorrente de múltiplos usuários.
+
+| Campo | Valor |
+|---|---|
+| Risco | Baixo |
+| Certeza atual | Alta |
+| Como validar | Não é necessário validar para o MVP — só reavaliar se o volume escalar 10x ou se houver múltiplos usuários simultâneos. |
+| Prazo | Não urgente |
+
+---
+
 ## Resumo de prioridades
 
 | # | Suposição | Risco | Certeza | Prioridade |
@@ -214,11 +274,15 @@
 | 2 | Nome é suficiente para identificar o mentor | Alto | Baixa | **Crítica** |
 | 3 | Dados públicos revelam autoridade real | Alto | Baixa | **Crítica** |
 | 4 | Connect Endeavor tem rota de integração | Alto | Baixa | **Crítica** |
-| 5 | LLM extrai autoridade com precisão suficiente | Alto | Baixa | **Crítica** |
-| 6 | Maioria dos mentores tem presença pública | Médio | Média | Logo |
-| 7 | Fontes constroem confiança, não fricção | Médio | Média | Logo |
-| 8 | Dor é frequente o suficiente para adoção | Médio | Média | Logo |
-| 9 | Perfil ruim queima confiança definitivamente | Alto | Alta | Logo |
-| 10 | Notícias têm sinal útil — não só ruído | Médio | Média | Logo |
-| 11 | Qualidade do match percebida pelo empreendedor melhora | Baixo | Baixa | Depois |
-| 12 | Adoção se espalha para todo o time | Médio | Baixa | Depois |
+| 5 | Time confia em perfis de IA para decisões de match | Alto | Baixa | **Crítica** |
+| 6 | LLM extrai autoridade com precisão suficiente | Alto | Baixa | **Crítica** |
+| 7 | Pipeline completa em menos de 5 minutos | Médio | Média | Logo |
+| 8 | Maioria dos mentores tem presença pública | Médio | Média | Logo |
+| 9 | Fontes constroem confiança, não fricção | Médio | Média | Logo |
+| 10 | Dor é frequente o suficiente para adoção | Médio | Média | Logo |
+| 11 | Perfil ruim queima confiança definitivamente | Alto | Alta | Logo |
+| 12 | Notícias têm sinal útil — não só ruído | Médio | Média | Logo |
+| 13 | Schema de output cobre o que o time precisa | Médio | Média | Depois |
+| 14 | SQLite suporta o volume da rede | Baixo | Alta | Depois |
+| 15 | Qualidade do match percebida pelo empreendedor melhora | Baixo | Baixa | Depois |
+| 16 | Adoção se espalha para todo o time | Médio | Baixa | Depois |
