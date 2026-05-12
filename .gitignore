@@ -1,0 +1,6 @@
+.claude/
+node_modules/
+enricher/data/mentors.db
+enricher/data/linkedin-session.json
+enricher/data/.env
+enricher/data/diag/
