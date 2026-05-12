@@ -1,56 +1,64 @@
-# Architecture — Enriquecimento de Perfis de Mentores (MVP Local)
+# Architecture — Enriquecimento de Perfis de Mentores
 
-> MVP para rodar na máquina do desenvolvedor. Sem servidor, sem deploy, sem infra.
 > Cada decisão está conectada à feature do PRD que a motivou.
 
 ---
 
 ## Stack
 
-### Linguagem: Python 3.12
+### Linguagem: Node.js (ESM)
 
-**Motivação (F1, F2, F3):** F1 usa Playwright (binding Python), F2 usa httpx para buscar notícias, F3 é lógica pura de score. Um único processo Python cobre os três sem depender de outros runtimes.
-
----
-
-### Banco: SQLite via stdlib `sqlite3`
-
-**Motivação (SP-4):** arquivo `.db` local, zero configuração, zero servidor. Persiste o histórico de runs para re-execução e comparação (SP-4). Sem ORM — queries diretas com `sqlite3` da stdlib são suficientes para o volume de um MVP. O arquivo fica em `data/enricher.db`.
+**Motivação (F1, F2, F3):** Playwright tem binding nativo e maduro para Node — a mesma linguagem roda o scraper (F1, F2), o servidor Express (API), e a síntese AI (F3). Sem overhead de cruzar processos ou bridges entre runtimes.
 
 ---
 
-### LinkedIn: Playwright (headed)
+### Framework: Express
 
-**Motivação (F1):** LinkedIn bloqueia requests HTTP simples e headless browsers com frequência. Com Playwright headed, o browser abre visivelmente na máquina do desenvolvedor — resolve CAPTCHAs manualmente quando necessário, mantém cookies de sessão entre execuções. A estratégia é buscar no Google `"Nome Mentor" site:linkedin.com/in` e capturar a URL do primeiro resultado relevante, sem entrar no LinkedIn diretamente.
-
-**Por que headed e não headless:** para MVP local, headed é mais confiável. Headless fica para quando o pipeline precisar rodar desassistido.
+**Motivação:** pipeline de enriquecimento pode levar até 5 minutos (critério F4). Express + SSE entrega progresso em tempo real para o browser sem WebSocket — simples de implementar e sem dependência extra no cliente (EventSource é API nativa do browser).
 
 ---
 
-### Notícias: httpx + DuckDuckGo HTML
+### Banco: SQLite via `better-sqlite3`
 
-**Motivação (F2):** DuckDuckGo não exige API key, não tem limite de requisições para uso pessoal, e retorna resultados de notícias via parâmetro `ia=news`. httpx faz a request, BeautifulSoup4 parseia o HTML. Sem cadastro, sem billing, sem variável de ambiente obrigatória para o primeiro teste.
-
----
-
-### Interface: CLI via `__main__.py`
-
-**Motivação:** usuária final é não-técnica, mas o MVP é operado pelo desenvolvedor durante F4 (deep evaluation). CLI é suficiente — imprime JSON formatado no terminal e salva no banco local.
+**Motivação (SP-4):** arquivo `.db` local, zero servidor, zero configuração. `better-sqlite3` é síncrono — sem callbacks, sem Promises, sem pool de conexões. Para um pipeline sequencial com um usuário por vez, síncrono é mais simples e igualmente performático. Persiste histórico de runs para re-execução sob demanda (SP-4).
 
 ---
 
-### Libs completas
+### LinkedIn: Playwright headed
 
-| Lib | Versão | Motivação |
-|---|---|---|
-| `playwright` | ^1.50 | F1: browser headed para encontrar LinkedIn |
-| `httpx` | ^0.28 | F2: buscar notícias no DuckDuckGo |
-| `beautifulsoup4` | ^4.13 | F2: parsear HTML dos resultados de busca |
-| `python-dotenv` | ^1.0 | Carregar config opcional (ex: delay entre requests) |
-| `pytest` | ^8.0 | Testes unitários do scorer e parser |
-| `pytest-asyncio` | ^0.25 | Testar funções async do pipeline |
+**Motivação (F1):** LinkedIn bloqueia headless browsers e requests HTTP simples. Com Playwright headed, o browser abre visivelmente — o desenvolvedor resolve login manual e CAPTCHAs na primeira sessão. O `storageState` é salvo em `enricher/data/linkedin-session.json` e reutilizado nas execuções seguintes. Se a sessão expira (redirect para `/login` ou `/authwall`), o arquivo é deletado e o pipeline tenta uma vez mais.
 
-Sem FastAPI. Sem SQLAlchemy. Sem SerpAPI. Sem nenhuma API key obrigatória para rodar.
+**URL discovery sem LinkedIn URL fornecida:** busca Bing `site:linkedin.com/in "Nome"` e extrai o primeiro perfil relevante dos resultados.
+
+---
+
+### Notícias: Playwright headless + Google News RSS fallback
+
+**Motivação (F2):** Bing News via Playwright headless é a fonte primária — sem API key, sem limite de requisições para uso pessoal. Google News RSS é o fallback quando Bing não retorna resultados suficientes. Ambas as fontes usam o mesmo Playwright já instalado para o LinkedIn.
+
+---
+
+### AI Synthesis: Anthropic `claude-sonnet-4-6`
+
+**Motivação (F3 expandido):** o PRD define score de qualidade como output do F3. A síntese AI vai além — produz `tldr`, `bio`, `topics`, `timeline`, `publicVoice`, e `dataQuality` a partir dos dados coletados nas etapas anteriores. Usa `claude-sonnet-4-6` via `ANTHROPIC_API_KEY`. Fallback: spawn do `claude --print` via Claude Code CLI local, se a variável de ambiente não estiver configurada.
+
+---
+
+### UI: SPA em arquivo único (`ui.html`)
+
+**Motivação:** usuária final é não-técnica (PRD: "não roda scripts"). Uma página servida pelo próprio Express elimina frontend separado, build pipeline e deploy. Design system Ops Center Dark — consistência visual com outras ferramentas internas.
+
+---
+
+### Dependências completas
+
+| Package | Motivação |
+|---|---|
+| `express` | Servidor HTTP + SSE streaming |
+| `better-sqlite3` | SQLite síncrono local (SP-4) |
+| `playwright` | LinkedIn headed (F1) + Bing News headless (F2) |
+| `@anthropic-ai/sdk` | AI synthesis (F3) |
+| `dotenv` | Carregar `ANTHROPIC_API_KEY` de `enricher/data/.env` |
 
 ---
 
@@ -60,233 +68,375 @@ Sem FastAPI. Sem SQLAlchemy. Sem SerpAPI. Sem nenhuma API key obrigatória para 
 
 ```
 enricher/
-├── __main__.py        # CLI: python -m enricher "Nome"
-├── pipeline.py        # Orquestra F1 → F2 → F3 sequencialmente
-├── linkedin.py        # F1: Playwright headed, busca URL no Google
-├── news.py            # F2: httpx + BS4, busca notícias no DuckDuckGo
-├── scorer.py          # F3: calcula score e alertas a partir dos resultados
-├── db.py              # SQLite: save/query de enrichment_runs e news_items
-└── models.py          # dataclasses: LinkedInResult, NewsItem, EnrichmentResult
-
-data/
-└── enricher.db        # arquivo SQLite local (criado automaticamente)
-
-eval/
-└── run_eval.py        # F4: roda pipeline para lista de nomes, gera relatório
-
-tests/
-├── test_scorer.py     # testa lógica de score e alertas
-└── test_parser.py     # testa parsing de HTML de busca
+├── server.js                     # Express: endpoints + SSE streaming
+├── db.js                         # better-sqlite3: CRUD síncrono
+├── ui.html                       # SPA single-file, design Ops Center Dark
+├── scrapers/
+│   ├── linkedin.js               # F1: Playwright headed, session management
+│   └── news.js                   # F2: Bing News headless + Google RSS fallback
+├── synthesizers/
+│   └── profile.js                # F3: Anthropic claude-sonnet-4-6, JSON profile
+├── data/
+│   ├── mentors.db                # SQLite (auto-criado)
+│   ├── linkedin-session.json     # Playwright storageState (gerado no 1º login)
+│   ├── .env                      # ANTHROPIC_API_KEY (fallback para envvar)
+│   └── diag/                     # Screenshots diagnósticos dos scrapers
+└── package.json
 ```
 
 ### Diagrama do sistema
 
 ```
-Terminal: python -m enricher "Ana Lima"
-           │
-           ▼
-     __main__.py
-           │
-           ▼
-     pipeline.py          ← orquestra sequencialmente
-      │         │
-      ▼         ▼
- linkedin.py  news.py
-      │         │
-      │  Playwright       httpx
-      │  headed           + BS4
-      │         │
-      │  Google search    DuckDuckGo
-      │  site:linkedin    ?q="Ana Lima"&ia=news
-      │         │
-      └────┬────┘
-           │
-           ▼
-       scorer.py          ← F3: score 0-100 + alertas
-           │
-           ▼
-         db.py             ← INSERT no SQLite local
-           │
-           ▼
-     data/enricher.db
-           │
-           ▼
-     __main__.py           ← imprime JSON no terminal
+Browser (ui.html)
+   │  GET /
+   │  POST /api/enrich          → inicia pipeline
+   │  GET  /api/enrich/:id/stream  ← SSE: progress, screenshot, done, error
+   │
+   ▼
+server.js (Express)
+   │
+   ├─ db.js (better-sqlite3)    ← leitura/escrita síncrona
+   │
+   └─ runFullPipeline()
+        │
+        ├── [paralelo]
+        │    ├─ scrapers/news.js
+        │    │    Playwright headless
+        │    │    Bing News → Google RSS fallback
+        │    │    emite SSE: progress "news_done"
+        │    │
+        │    └─ scrapers/linkedin.js → findLinkedInUrl()
+        │         Bing search site:linkedin.com/in
+        │         emite SSE: progress "url_found"
+        │
+        ├── scrapers/linkedin.js → scrapeProfile()
+        │    Playwright headed
+        │    session: data/linkedin-session.json
+        │    emite SSE: screenshot (diag), progress "linkedin_done"
+        │
+        └── synthesizers/profile.js
+             Anthropic claude-sonnet-4-6
+             input: news + linkedin_data do banco
+             output: { tldr, bio, topics, timeline, publicVoice, dataQuality }
+             emite SSE: synthesis_done, done
 ```
 
-**Por que sequencial e não paralelo:** para MVP local headed, rodar Playwright e httpx em paralelo não traz ganho perceptível e complica o debug. Sequencial é mais fácil de acompanhar na tela.
+### Pipeline completo — `runFullPipeline`
+
+| Step | Módulo | Paralelo? | SSE emitido |
+|---|---|---|---|
+| 1. News scraping + LinkedIn URL discovery | `news.js` + `linkedin.js` | Sim | `progress` `news_done`, `progress` `url_found` |
+| 2. LinkedIn profile scraping | `linkedin.js` | Não (depende da URL do step 1) | `screenshot`, `progress` `linkedin_done` |
+| 3. AI synthesis | `profile.js` | Não (depende de news + linkedin) | `synthesis_done` |
+| 4. Persistência final | `db.js` | — | `done` |
+
+### Gerenciamento de sessão LinkedIn
+
+```
+Primeira execução (sem linkedin-session.json):
+  Playwright headed → abre linkedin.com/login
+  Aguarda URL chegar em /feed/ (login manual do usuário)
+  Salva storageState → linkedin-session.json
+
+Execuções seguintes:
+  Carrega linkedin-session.json → Playwright headed com contexto autenticado
+
+Sessão expirada (redirect para /login ou /authwall):
+  Deleta linkedin-session.json
+  Retry uma vez → fluxo de primeira execução
+```
 
 ---
 
 ## Data Model
 
-### Tabelas (SQLite)
+### Tabelas
 
 ```sql
 CREATE TABLE IF NOT EXISTS mentors (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT    NOT NULL UNIQUE,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS enrichment_runs (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    mentor_id             INTEGER NOT NULL REFERENCES mentors(id),
-    score_geral           INTEGER NOT NULL,
-    alerta                TEXT,
-    gerado_em             TEXT    NOT NULL DEFAULT (datetime('now')),
-    duracao_segundos      REAL,
-
-    -- F1
-    linkedin_encontrado   INTEGER NOT NULL DEFAULT 0,   -- 0/1 (bool)
-    linkedin_url          TEXT,
-    linkedin_confianca    TEXT,    -- 'alta' | 'média' | 'baixa' | NULL
-    linkedin_motivo       TEXT,
-
-    -- F2 (resumo; itens detalhados em news_items)
-    noticias_quantidade   INTEGER NOT NULL DEFAULT 0,
-    noticias_mais_recente TEXT    -- 'YYYY-MM-DD'
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    linkedin_url  TEXT,
+    linkedin_data TEXT,   -- JSON: dados brutos extraídos pelo scraper
+    ai_profile    TEXT,   -- JSON: { tldr, bio, topics, timeline, publicVoice, dataQuality }
+    score         INTEGER,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS news_items (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    enrichment_run_id INTEGER NOT NULL REFERENCES enrichment_runs(id),
-    titulo            TEXT    NOT NULL,
-    data              TEXT,   -- 'YYYY-MM-DD'
-    url               TEXT    NOT NULL,
-    snippet           TEXT
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    mentor_id   INTEGER NOT NULL REFERENCES mentors(id) ON DELETE CASCADE,
+    title       TEXT    NOT NULL,
+    date        TEXT,   -- 'YYYY-MM-DD'
+    url         TEXT    NOT NULL,
+    snippet     TEXT,
+    source      TEXT,   -- 'bing' | 'google_rss'
+    scraped_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 ```
 
 ### Índices
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_runs_mentor   ON enrichment_runs(mentor_id);
-CREATE INDEX IF NOT EXISTS idx_runs_data     ON enrichment_runs(gerado_em DESC);
-CREATE INDEX IF NOT EXISTS idx_news_run      ON news_items(enrichment_run_id);
+CREATE INDEX IF NOT EXISTS idx_news_mentor   ON news_items(mentor_id);
+CREATE INDEX IF NOT EXISTS idx_news_date     ON news_items(date DESC);
+CREATE INDEX IF NOT EXISTS idx_mentor_score  ON mentors(score DESC);
 ```
 
 ### Relacionamentos
 
 ```
-mentors (1) ──< enrichment_runs (1) ──< news_items
+mentors (1) ──< news_items
 ```
 
-- Um mentor pode ter N runs (re-execução a qualquer momento — SP-4)
-- `mentors.name` é UNIQUE: re-execução do mesmo nome reutiliza o mentor existente
+- `linkedin_data` e `ai_profile` são armazenados como TEXT JSON — sem tabela separada para evitar joins desnecessários no MVP.
+- `ON DELETE CASCADE` em `news_items`: deletar mentor limpa todas as notícias associadas.
 
 ---
 
 ## API Endpoints
 
-Não há API REST no MVP local. A interface é exclusivamente CLI.
+### `GET /`
 
-### Comandos CLI
+Serve `ui.html`. Entrypoint da aplicação para a usuária.
 
-**Enriquecer um mentor:**
-```bash
-python -m enricher "Ana Lima"
+---
+
+### `GET /api/mentors`
+
+Lista todos os mentores com contagem de notícias.
+
+**Response `200`:**
+```json
+[
+  {
+    "id": 7,
+    "name": "Ana Lima",
+    "linkedin_url": "https://linkedin.com/in/ana-lima-xyz",
+    "score": 75,
+    "news_count": 4,
+    "updated_at": "2026-05-12T14:30:00"
+  }
+]
 ```
-Saída (JSON no terminal):
+
+---
+
+### `GET /api/mentors/:id`
+
+Detalhe completo: dados do mentor + notícias + `linkedin_data` + `ai_profile`.
+
+**Response `200`:**
 ```json
 {
-  "id": 42,
-  "nome": "Ana Lima",
-  "score_geral": 75,
-  "gerado_em": "2026-05-12T14:30:00",
-  "duracao_segundos": 18.4,
-  "linkedin": {
-    "encontrado": true,
-    "url": "https://linkedin.com/in/ana-lima-xyz",
-    "confianca": "alta",
-    "motivo": null
+  "id": 7,
+  "name": "Ana Lima",
+  "linkedin_url": "https://linkedin.com/in/ana-lima-xyz",
+  "linkedin_data": { ... },
+  "ai_profile": {
+    "tldr": "...",
+    "bio": "...",
+    "topics": ["fintech", "growth"],
+    "timeline": [ ... ],
+    "publicVoice": "...",
+    "dataQuality": "alta"
   },
-  "noticias": {
-    "quantidade": 4,
-    "mais_recente": "2025-11-03",
-    "items": [
-      {
-        "titulo": "Ana Lima assume direção da Startup XYZ",
-        "data": "2025-11-03",
-        "url": "https://...",
-        "snippet": "..."
-      }
-    ]
-  },
-  "alerta": null
+  "score": 75,
+  "news": [ { "title": "...", "date": "...", "url": "...", "snippet": "..." } ]
 }
 ```
 
-**Consultar runs anteriores de um mentor:**
-```bash
-python -m enricher history "Ana Lima"
+**Erros:** `404` quando mentor não existe.
+
+---
+
+### `DELETE /api/mentors/:id`
+
+Remove mentor e notícias em cascade.
+
+**Response `204`** sem body.
+
+**Erros:** `404` quando mentor não existe.
+
+---
+
+### `POST /api/enrich`
+
+Cria ou atualiza mentor e dispara o pipeline completo.
+
+**Request body:**
+```json
+{ "name": "Ana Lima", "linkedinUrl": "https://linkedin.com/in/..." }
+```
+`linkedinUrl` é opcional — se ausente, o pipeline faz discovery via Bing.
+
+**Response `200`:**
+```json
+{ "mentorId": 7 }
 ```
 
-**Rodar F4 (deep evaluation) para lista de nomes:**
-```bash
-python eval/run_eval.py mentors.txt
-# gera eval_results.json com resumo e resultados individuais
+Após retornar o `mentorId`, o cliente abre SSE em `GET /api/enrich/7/stream` para acompanhar o progresso.
+
+**Erros:** `400` quando `name` está ausente.
+
+---
+
+### `POST /api/enrich/:id/refresh`
+
+Re-executa o pipeline completo para um mentor existente. Preserva dados anteriores até o novo pipeline completar.
+
+**Request body (opcional):**
+```json
+{ "linkedinUrl": "https://linkedin.com/in/..." }
 ```
 
-**`mentors.txt` — formato simples, um nome por linha:**
+**Response `200`:**
+```json
+{ "mentorId": 7 }
 ```
-Ana Lima
-Carlos Silva
-João Souza
+
+---
+
+### `GET /api/enrich/:mentorId/stream`
+
+SSE stream de progresso para o job ativo do mentor.
+
+**Motivação:** pipeline pode levar até 5 minutos (critério F4). SSE mantém a usuária informada sobre cada etapa sem polling.
+
+**Content-Type:** `text/event-stream`
+
+**Eventos:**
+
+```
+event: progress
+data: { "step": "news_done", "message": "4 notícias encontradas" }
+
+event: progress
+data: { "step": "url_found", "message": "LinkedIn encontrado: alta confiança" }
+
+event: screenshot
+data: { "url": "/data/diag/mentor-7-linkedin.png" }
+
+event: progress
+data: { "step": "linkedin_done", "message": "Perfil LinkedIn extraído" }
+
+event: synthesis_done
+data: { "profile": { "tldr": "...", "topics": [...], "dataQuality": "alta" } }
+
+event: done
+data: { "score": 75 }
+```
+
+```
+event: error
+data: { "message": "LinkedIn session expired — reopen browser to log in" }
+```
+
+---
+
+### `POST /api/enrich/:id/linkedin`
+
+Executa apenas o scraping do LinkedIn para um mentor existente (sem re-rodar notícias ou síntese).
+
+**Response `200`:**
+```json
+{ "mentorId": 7 }
+```
+
+---
+
+### `POST /api/enrich/:id/synthesize`
+
+Executa apenas a síntese AI usando dados já presentes no banco. Útil para re-gerar o `ai_profile` sem re-scraper.
+
+**Response `200`:**
+```json
+{ "mentorId": 7 }
 ```
 
 ---
 
 ## Frontend
 
-Não há frontend no MVP. Interface é o terminal.
+### Arquitetura
 
-### Pós-MVP
+SPA em arquivo único (`ui.html`) — todo HTML, CSS e JavaScript em um arquivo. Sem bundler, sem framework, sem backend separado. Servido diretamente pelo Express.
 
-Se a integração com Connect Endeavor não for viável (assumption 4), a opção mais simples é uma página estática com FastAPI + Jinja2:
+**Design system:** Ops Center Dark — consistência com outras ferramentas internas.
 
-- `GET /` — formulário com campo nome + botão
-- `POST /search` → redireciona para `/results/{id}`
-- `GET /results/{id}` — exibe score, LinkedIn, notícias, alerta
+**Layout:** três painéis
 
-Stack: FastAPI + Jinja2 (server-rendered, sem JavaScript framework).
+```
+┌─────────────────┬───────────────────────────┬──────────────────┐
+│   Lista de      │    Detalhe do mentor       │   Ações /        │
+│   mentores      │    (score, LinkedIn,       │   Controles      │
+│                 │     notícias, ai_profile)  │                  │
+└─────────────────┴───────────────────────────┴──────────────────┘
+```
+
+**Rotas (client-side, hash-based):**
+
+| Hash | Tela |
+|---|---|
+| `#/` | Lista de mentores com scores |
+| `#/mentor/:id` | Detalhe: score breakdown, LinkedIn, notícias, ai_profile |
+| `#/enrich` | Formulário novo mentor + log de progresso via SSE |
+
+**Estado global (três variáveis):**
+
+| Variável | Tipo | Responsabilidade |
+|---|---|---|
+| `activeMentor` | objeto | Mentor selecionado atualmente |
+| `activeStream` | `EventSource \| null` | SSE connection para job em andamento |
+| `progressLog` | `string[]` | Linhas do log de progresso exibidas na tela |
+
+**Split server / client:**
+
+| Camada | O que roda lá |
+|---|---|
+| Server (`server.js`) | Queries SQLite, orquestração do pipeline, SSE |
+| Client (`ui.html`) | Renderização de UI, EventSource, navegação hash |
+
+**Nenhum dado é computado no cliente** — toda lógica de score e síntese vive no servidor.
 
 ---
 
 ## Fluxo de dados end-to-end
 
 ```
-$ python -m enricher "Ana Lima"
+Usuária digita "Ana Lima" no formulário
        │
        ▼
-pipeline.py: inicia timer
+POST /api/enrich  { name: "Ana Lima" }
        │
-       ├─ linkedin.py:
-       │    Playwright headed abre browser
-       │    Navega para google.com
-       │    Busca: "Ana Lima" site:linkedin.com/in
-       │    Captura primeiro resultado relevante
-       │    Avalia confiança (1 resultado claro → alta; múltiplos → média/baixa)
-       │    Retorna LinkedInResult
+       ▼
+server.js: cria/atualiza mentor no banco → retorna { mentorId: 7 }
        │
-       ├─ news.py:
-       │    httpx GET duckduckgo.com?q="Ana Lima"&ia=news
-       │    BS4 parseia cards de notícias
-       │    Extrai título, data, url, snippet
-       │    Retorna List[NewsItem]
+       ▼
+Browser abre EventSource: GET /api/enrich/7/stream
        │
-       ├─ scorer.py:
-       │    Aplica critérios do PRD (F3)
-       │    score = 0 se nenhuma fonte encontrada
-       │    Gera alerta quando necessário
-       │    Retorna EnrichmentResult
+       ▼
+runFullPipeline(mentorId=7):
        │
-       ├─ db.py:
-       │    upsert mentors (name UNIQUE)
-       │    INSERT enrichment_runs
-       │    INSERT news_items × n
+       ├── Promise.all([
+       │     news.js: Playwright headless → Bing News → Google RSS fallback
+       │     linkedin.js: findLinkedInUrl() → Bing "site:linkedin.com/in"
+       │   ])
+       │   → SSE: progress "news_done", progress "url_found"
        │
-       └─ __main__.py:
-            Imprime JSON formatado
-            Exibe tempo de execução
+       ├── linkedin.js: scrapeProfile(url)
+       │   Playwright headed, carrega linkedin-session.json
+       │   → SSE: screenshot (diag), progress "linkedin_done"
+       │
+       ├── profile.js: synthesize(news, linkedinData)
+       │   Anthropic claude-sonnet-4-6
+       │   → SSE: synthesis_done { tldr, topics, dataQuality, ... }
+       │
+       └── db.js: UPDATE mentors SET ai_profile, score, linkedin_data
+           → SSE: done { score: 75 }
+       │
+       ▼
+Browser navega para #/mentor/7
+Exibe score 75/100, LinkedIn (alta confiança), 4 notícias, ai_profile
 ```
