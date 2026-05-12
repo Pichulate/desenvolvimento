@@ -95,3 +95,7 @@ export function updateAiProfile(mentorId, { ai_profile, score }) {
 export function deleteMentor(id) {
   db.prepare(`DELETE FROM mentors WHERE id = ?`).run(id);
 }
+
+export function clearNewsItems(mentorId) {
+  db.prepare(`DELETE FROM news_items WHERE mentor_id = ?`).run(mentorId);
+}
