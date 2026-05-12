@@ -1,5 +1,6 @@
-# Architecture — Enriquecimento de Perfis de Mentores
+# Architecture — Enriquecimento de Perfis de Mentores (MVP Local)
 
+> MVP para rodar na máquina do desenvolvedor. Sem servidor, sem deploy, sem infra.
 > Cada decisão está conectada à feature do PRD que a motivou.
 
 ---
@@ -8,37 +9,33 @@
 
 ### Linguagem: Python 3.12
 
-**Motivação (F1, F2, F3):** o núcleo do sistema é I/O-bound — chamadas a APIs de busca, fetching de páginas, processamento de texto. Python tem o melhor ecossistema para esse perfil: `httpx` para async HTTP, `pydantic` para validação de schema, e `anthropic` SDK pronto para quando o LLM entrar no roadmap (pós-MVP). Nenhuma outra linguagem cobre os três casos com a mesma maturidade de bibliotecas.
+**Motivação (F1, F2, F3):** F1 usa Playwright (binding Python), F2 usa httpx para buscar notícias, F3 é lógica pura de score. Um único processo Python cobre os três sem depender de outros runtimes.
 
 ---
 
-### Framework: FastAPI
+### Banco: SQLite via stdlib `sqlite3`
 
-**Motivação (F1+F2 paralelos):** o PRD define que F1 e F2 são independentes e devem rodar em paralelo. FastAPI com `asyncio` permite executar a descoberta do LinkedIn e a busca de notícias concorrentemente em uma única requisição, sem threading manual. Pydantic v2 (nativo ao FastAPI) mapeia diretamente para o schema de output do F3 — sem camada extra de serialização.
-
----
-
-### Banco de dados: SQLite via SQLAlchemy
-
-**Motivação (SP-4, assumption 14):** o PRD requer timestamp em cada execução e re-execução sob demanda (SP-4). SQLite resolve isso com zero configuração e zero infraestrutura. A assumption 14 do mapa de suposições confirma que o volume da rede Endeavor (centenas de mentores) está dentro do envelope do SQLite. SQLAlchemy como ORM mantém a opção de migrar para PostgreSQL no futuro sem reescrever queries.
+**Motivação (SP-4):** arquivo `.db` local, zero configuração, zero servidor. Persiste o histórico de runs para re-execução e comparação (SP-4). Sem ORM — queries diretas com `sqlite3` da stdlib são suficientes para o volume de um MVP. O arquivo fica em `data/enricher.db`.
 
 ---
 
-### Busca: SerpAPI
+### LinkedIn: Playwright (headed)
 
-**Motivação (F1, F2):** F1 precisa encontrar o perfil correto no LinkedIn sem scraping direto (LinkedIn bloqueia ativamente — assumption 1 do mapa). A abordagem segura é busca via Google: `"nome" site:linkedin.com/in`. F2 precisa de notícias sobre pessoa e empresa. A SerpAPI cobre ambos os casos com uma única integração — endpoint de busca orgânica para F1, endpoint Google News para F2. Alternativa avaliada: Bing Search API (mais barata, menos cobertura de notícias brasileiras).
+**Motivação (F1):** LinkedIn bloqueia requests HTTP simples e headless browsers com frequência. Com Playwright headed, o browser abre visivelmente na máquina do desenvolvedor — resolve CAPTCHAs manualmente quando necessário, mantém cookies de sessão entre execuções. A estratégia é buscar no Google `"Nome Mentor" site:linkedin.com/in` e capturar a URL do primeiro resultado relevante, sem entrar no LinkedIn diretamente.
 
----
-
-### HTTP client: httpx
-
-**Motivação (F1+F2 paralelos):** cliente HTTP async nativo para Python. Permite executar F1 e F2 concorrentemente com `asyncio.gather` sem overhead de threads. Usado para chamadas à SerpAPI e para qualquer fetch adicional de snippets de notícias.
+**Por que headed e não headless:** para MVP local, headed é mais confiável. Headless fica para quando o pipeline precisar rodar desassistido.
 
 ---
 
-### Validação: Pydantic v2
+### Notícias: httpx + DuckDuckGo HTML
 
-**Motivação (F3):** o schema de output do F3 é definido explicitamente no PRD. Pydantic valida, serializa e documenta esse schema automaticamente, garantindo que score nunca seja negativo, que `confianca` só aceite os três valores definidos, e que `gerado_em` seja sempre um timestamp válido. Previne a classe inteira de bugs onde o sistema inventaria dados (critério explícito do F3: "nunca inventa").
+**Motivação (F2):** DuckDuckGo não exige API key, não tem limite de requisições para uso pessoal, e retorna resultados de notícias via parâmetro `ia=news`. httpx faz a request, BeautifulSoup4 parseia o HTML. Sem cadastro, sem billing, sem variável de ambiente obrigatória para o primeiro teste.
+
+---
+
+### Interface: CLI via `__main__.py`
+
+**Motivação:** usuária final é não-técnica, mas o MVP é operado pelo desenvolvedor durante F4 (deep evaluation). CLI é suficiente — imprime JSON formatado no terminal e salva no banco local.
 
 ---
 
@@ -46,143 +43,127 @@
 
 | Lib | Versão | Motivação |
 |---|---|---|
-| `fastapi` | ^0.115 | Framework API async (F1+F2 paralelos) |
-| `uvicorn` | ^0.34 | Servidor ASGI para FastAPI |
-| `pydantic` | ^2.11 | Schema F3, validação de inputs |
-| `sqlalchemy` | ^2.0 | ORM SQLite, histórico de runs (SP-4) |
-| `httpx` | ^0.28 | HTTP async para SerpAPI (F1, F2) |
-| `python-dotenv` | ^1.0 | Gerenciar SERPAPI_KEY sem hardcode |
-| `pytest` | ^8.0 | Testes unitários e de integração |
-| `pytest-asyncio` | ^0.25 | Testar corrotinas do pipeline |
+| `playwright` | ^1.50 | F1: browser headed para encontrar LinkedIn |
+| `httpx` | ^0.28 | F2: buscar notícias no DuckDuckGo |
+| `beautifulsoup4` | ^4.13 | F2: parsear HTML dos resultados de busca |
+| `python-dotenv` | ^1.0 | Carregar config opcional (ex: delay entre requests) |
+| `pytest` | ^8.0 | Testes unitários do scorer e parser |
+| `pytest-asyncio` | ^0.25 | Testar funções async do pipeline |
+
+Sem FastAPI. Sem SQLAlchemy. Sem SerpAPI. Sem nenhuma API key obrigatória para rodar.
 
 ---
 
 ## Componentes
 
+### Estrutura de arquivos
+
+```
+enricher/
+├── __main__.py        # CLI: python -m enricher "Nome"
+├── pipeline.py        # Orquestra F1 → F2 → F3 sequencialmente
+├── linkedin.py        # F1: Playwright headed, busca URL no Google
+├── news.py            # F2: httpx + BS4, busca notícias no DuckDuckGo
+├── scorer.py          # F3: calcula score e alertas a partir dos resultados
+├── db.py              # SQLite: save/query de enrichment_runs e news_items
+└── models.py          # dataclasses: LinkedInResult, NewsItem, EnrichmentResult
+
+data/
+└── enricher.db        # arquivo SQLite local (criado automaticamente)
+
+eval/
+└── run_eval.py        # F4: roda pipeline para lista de nomes, gera relatório
+
+tests/
+├── test_scorer.py     # testa lógica de score e alertas
+└── test_parser.py     # testa parsing de HTML de busca
+```
+
 ### Diagrama do sistema
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   Entrypoints                        │
-│                                                      │
-│   CLI: python -m enricher enrich "Nome"             │
-│   API: POST /api/v1/enrichments                      │
-└───────────────────────┬──────────────────────────────┘
-                        │
-┌───────────────────────▼──────────────────────────────┐
-│             Pipeline Orchestrator                    │
-│                                                      │
-│   asyncio.gather(linkedin_discoverer, news_searcher) │
-│   → passa resultados para score_calculator           │
-│   → persiste no banco                                │
-└──────┬────────────────────────────────┬──────────────┘
-       │                                │
-┌──────▼──────────┐          ┌──────────▼──────────────┐
-│  LinkedIn       │          │  News Searcher          │
-│  Discoverer     │          │                         │
-│  (F1)           │          │  (F2)                   │
-│                 │          │                         │
-│  SerpAPI        │          │  SerpAPI                │
-│  Google Search  │          │  Google News            │
-│  site:linkedin  │          │  + busca por empresa    │
-└──────┬──────────┘          └──────────┬──────────────┘
-       │                                │
-       └───────────────┬────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│              Score Calculator (F3)                  │
-│                                                     │
-│  EnrichmentResult (Pydantic)                        │
-│  score_geral, linkedin, noticias, alerta            │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│              Repository (SQLAlchemy)                │
-│                                                     │
-│  upsert mentor → insert enrichment_run              │
-│              → insert news_items                    │
-└──────────────────────┬──────────────────────────────┘
-                       │
-                 ┌─────▼─────┐
-                 │  SQLite   │
-                 │  (local)  │
-                 └───────────┘
+Terminal: python -m enricher "Ana Lima"
+           │
+           ▼
+     __main__.py
+           │
+           ▼
+     pipeline.py          ← orquestra sequencialmente
+      │         │
+      ▼         ▼
+ linkedin.py  news.py
+      │         │
+      │  Playwright       httpx
+      │  headed           + BS4
+      │         │
+      │  Google search    DuckDuckGo
+      │  site:linkedin    ?q="Ana Lima"&ia=news
+      │         │
+      └────┬────┘
+           │
+           ▼
+       scorer.py          ← F3: score 0-100 + alertas
+           │
+           ▼
+         db.py             ← INSERT no SQLite local
+           │
+           ▼
+     data/enricher.db
+           │
+           ▼
+     __main__.py           ← imprime JSON no terminal
 ```
 
-### Responsabilidades por módulo
-
-| Módulo | Arquivo | Responsabilidade |
-|---|---|---|
-| Entrypoint CLI | `enricher/__main__.py` | Aceita nome via terminal, imprime resultado |
-| Router API | `enricher/api/routes.py` | Define endpoints REST, chama orchestrator |
-| Orchestrator | `enricher/pipeline/orchestrator.py` | `asyncio.gather(F1, F2)` → F3 → Repository |
-| LinkedIn Discoverer | `enricher/pipeline/linkedin.py` | F1: busca + confidence scoring |
-| News Searcher | `enricher/pipeline/news.py` | F2: Google News + busca por empresa |
-| Score Calculator | `enricher/pipeline/scorer.py` | F3: aplica critérios do PRD, gera alertas |
-| Models (Pydantic) | `enricher/models/schemas.py` | Tipos de input/output do pipeline |
-| Models (ORM) | `enricher/models/orm.py` | Tabelas SQLAlchemy |
-| Repository | `enricher/db/repository.py` | Persistência e consulta ao SQLite |
-| SerpAPI Client | `enricher/clients/serpapi.py` | Wrapper para chamadas à SerpAPI |
-| Eval Runner | `enricher/eval/runner.py` | F4: roda 20 mentores, gera relatório |
+**Por que sequencial e não paralelo:** para MVP local headed, rodar Playwright e httpx em paralelo não traz ganho perceptível e complica o debug. Sequencial é mais fácil de acompanhar na tela.
 
 ---
 
 ## Data Model
 
-### Tabelas
+### Tabelas (SQLite)
 
 ```sql
-CREATE TABLE mentors (
-    id          INTEGER  PRIMARY KEY AUTOINCREMENT,
-    name        TEXT     NOT NULL,
-    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS mentors (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL UNIQUE,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE enrichment_runs (
-    id                    INTEGER  PRIMARY KEY AUTOINCREMENT,
-    mentor_id             INTEGER  NOT NULL REFERENCES mentors(id),
-
-    -- F3: score e metadados
-    score_geral           INTEGER  NOT NULL CHECK (score_geral BETWEEN 0 AND 100),
+CREATE TABLE IF NOT EXISTS enrichment_runs (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    mentor_id             INTEGER NOT NULL REFERENCES mentors(id),
+    score_geral           INTEGER NOT NULL,
     alerta                TEXT,
-    gerado_em             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    duracao_segundos      REAL,          -- F4: mede se pipeline < 5 min
+    gerado_em             TEXT    NOT NULL DEFAULT (datetime('now')),
+    duracao_segundos      REAL,
 
-    -- F1: resultado LinkedIn
-    linkedin_encontrado   BOOLEAN  NOT NULL DEFAULT FALSE,
+    -- F1
+    linkedin_encontrado   INTEGER NOT NULL DEFAULT 0,   -- 0/1 (bool)
     linkedin_url          TEXT,
-    linkedin_confianca    TEXT     CHECK (linkedin_confianca IN ('alta', 'média', 'baixa')),
-    linkedin_motivo       TEXT,          -- preenchido quando confiança baixa ou null
+    linkedin_confianca    TEXT,    -- 'alta' | 'média' | 'baixa' | NULL
+    linkedin_motivo       TEXT,
 
-    -- F2: metadados de notícias (itens detalhados em news_items)
-    noticias_quantidade   INTEGER  NOT NULL DEFAULT 0,
-    noticias_mais_recente DATE
+    -- F2 (resumo; itens detalhados em news_items)
+    noticias_quantidade   INTEGER NOT NULL DEFAULT 0,
+    noticias_mais_recente TEXT    -- 'YYYY-MM-DD'
 );
 
-CREATE TABLE news_items (
-    id                  INTEGER  PRIMARY KEY AUTOINCREMENT,
-    enrichment_run_id   INTEGER  NOT NULL REFERENCES enrichment_runs(id) ON DELETE CASCADE,
-    titulo              TEXT     NOT NULL,
-    data                DATE,
-    url                 TEXT     NOT NULL,
-    snippet             TEXT
+CREATE TABLE IF NOT EXISTS news_items (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    enrichment_run_id INTEGER NOT NULL REFERENCES enrichment_runs(id),
+    titulo            TEXT    NOT NULL,
+    data              TEXT,   -- 'YYYY-MM-DD'
+    url               TEXT    NOT NULL,
+    snippet           TEXT
 );
 ```
 
 ### Índices
 
 ```sql
--- Buscar runs de um mentor (GET /mentors/{id}/enrichments)
-CREATE INDEX idx_runs_mentor_id
-    ON enrichment_runs(mentor_id);
-
--- Ordenar runs por data (run mais recente primeiro)
-CREATE INDEX idx_runs_gerado_em
-    ON enrichment_runs(gerado_em DESC);
-
--- Buscar notícias de um run (F4: avaliação por run)
-CREATE INDEX idx_news_run_id
-    ON news_items(enrichment_run_id);
+CREATE INDEX IF NOT EXISTS idx_runs_mentor   ON enrichment_runs(mentor_id);
+CREATE INDEX IF NOT EXISTS idx_runs_data     ON enrichment_runs(gerado_em DESC);
+CREATE INDEX IF NOT EXISTS idx_news_run      ON news_items(enrichment_run_id);
 ```
 
 ### Relacionamentos
@@ -191,49 +172,29 @@ CREATE INDEX idx_news_run_id
 mentors (1) ──< enrichment_runs (1) ──< news_items
 ```
 
-- Um mentor pode ter múltiplos runs (re-execução sob demanda — SP-4)
-- Cada run tem seus `news_items` próprios (isolamento histórico)
-- `ON DELETE CASCADE` em `news_items`: deletar um run limpa suas notícias
-
-### Mapeamento PRD → Schema
-
-| Campo PRD (F3 output) | Tabela.coluna |
-|---|---|
-| `score_geral` | `enrichment_runs.score_geral` |
-| `gerado_em` | `enrichment_runs.gerado_em` |
-| `linkedin.encontrado` | `enrichment_runs.linkedin_encontrado` |
-| `linkedin.url` | `enrichment_runs.linkedin_url` |
-| `linkedin.confianca` | `enrichment_runs.linkedin_confianca` |
-| `noticias.quantidade` | `enrichment_runs.noticias_quantidade` |
-| `noticias.mais_recente` | `enrichment_runs.noticias_mais_recente` |
-| `noticias.urls[]` | `news_items.url` (1 row por item) |
-| `alerta` | `enrichment_runs.alerta` |
-| Performance (F4) | `enrichment_runs.duracao_segundos` |
+- Um mentor pode ter N runs (re-execução a qualquer momento — SP-4)
+- `mentors.name` é UNIQUE: re-execução do mesmo nome reutiliza o mentor existente
 
 ---
 
 ## API Endpoints
 
-### `POST /api/v1/enrichments`
+Não há API REST no MVP local. A interface é exclusivamente CLI.
 
-Dispara o pipeline completo para um nome. Executa F1+F2 em paralelo, calcula F3, persiste e retorna.
+### Comandos CLI
 
-**Motivação:** entrypoint principal do MVP (F1, F2, F3).
-
-**Request body:**
-```json
-{ "nome": "Ana Lima" }
+**Enriquecer um mentor:**
+```bash
+python -m enricher "Ana Lima"
 ```
-
-**Response `201 Created`:**
+Saída (JSON no terminal):
 ```json
 {
   "id": 42,
-  "mentor_id": 7,
   "nome": "Ana Lima",
   "score_geral": 75,
-  "gerado_em": "2026-05-12T14:30:00Z",
-  "duracao_segundos": 12.4,
+  "gerado_em": "2026-05-12T14:30:00",
+  "duracao_segundos": 18.4,
   "linkedin": {
     "encontrado": true,
     "url": "https://linkedin.com/in/ana-lima-xyz",
@@ -256,173 +217,76 @@ Dispara o pipeline completo para um nome. Executa F1+F2 em paralelo, calcula F3,
 }
 ```
 
-**Erros:**
-
-| Status | Quando |
-|---|---|
-| `422 Unprocessable Entity` | `nome` ausente ou vazio |
-| `503 Service Unavailable` | SerpAPI indisponível ou chave inválida |
-
----
-
-### `GET /api/v1/enrichments/{id}`
-
-Retorna um run específico pelo ID.
-
-**Motivação:** permite consultar resultado de execução anterior sem re-rodar o pipeline (SP-4).
-
-**Response `200 OK`:** mesmo schema do `POST`.
-
-**Erros:**
-
-| Status | Quando |
-|---|---|
-| `404 Not Found` | ID inexistente |
-
----
-
-### `GET /api/v1/mentors/{mentor_id}/enrichments`
-
-Lista todos os runs de um mentor, ordenados do mais recente para o mais antigo.
-
-**Motivação:** histórico de enriquecimentos por mentor — permite comparar scores ao longo do tempo (SP-4).
-
-**Response `200 OK`:**
-```json
-{
-  "mentor_id": 7,
-  "nome": "Ana Lima",
-  "total": 3,
-  "enrichments": [
-    { "id": 42, "score_geral": 75, "gerado_em": "2026-05-12T14:30:00Z", "alerta": null },
-    { "id": 31, "score_geral": 60, "gerado_em": "2026-02-01T09:00:00Z", "alerta": "Sem notícias recentes" }
-  ]
-}
+**Consultar runs anteriores de um mentor:**
+```bash
+python -m enricher history "Ana Lima"
 ```
 
-**Erros:**
-
-| Status | Quando |
-|---|---|
-| `404 Not Found` | `mentor_id` inexistente |
-
----
-
-### `POST /api/v1/eval`
-
-Roda o pipeline para uma lista de nomes e retorna o relatório de avaliação. Usado na F4 (deep evaluation).
-
-**Motivação:** F4 exige rodar 20 mentores com perfis variados e medir acertos. Este endpoint automatiza a coleta de resultados para avaliação manual posterior.
-
-**Request body:**
-```json
-{
-  "nomes": ["Ana Lima", "Carlos Silva", "..."],
-  "label": "deep-eval-rodada-1"
-}
+**Rodar F4 (deep evaluation) para lista de nomes:**
+```bash
+python eval/run_eval.py mentors.txt
+# gera eval_results.json com resumo e resultados individuais
 ```
 
-**Response `200 OK`:**
-```json
-{
-  "label": "deep-eval-rodada-1",
-  "total": 20,
-  "resumo": {
-    "score_medio": 58,
-    "linkedin_encontrado_pct": 85,
-    "com_noticias_pct": 70,
-    "alertas_gerados": 6,
-    "duracao_media_segundos": 18.3,
-    "acima_de_5min": 2
-  },
-  "resultados": [ ... ]
-}
+**`mentors.txt` — formato simples, um nome por linha:**
 ```
-
-**Erros:**
-
-| Status | Quando |
-|---|---|
-| `422 Unprocessable Entity` | Lista vazia ou mais de 100 nomes |
-| `503 Service Unavailable` | SerpAPI indisponível |
+Ana Lima
+Carlos Silva
+João Souza
+```
 
 ---
 
 ## Frontend
 
-### Estado no MVP
+Não há frontend no MVP. Interface é o terminal.
 
-UI está fora do escopo do MVP (definido explicitamente no PRD). A interface do MVP é:
+### Pós-MVP
 
-**CLI (entregue no MVP):**
-```bash
-python -m enricher enrich "Ana Lima"
-# → imprime JSON formatado no terminal
-# → salva no banco local
+Se a integração com Connect Endeavor não for viável (assumption 4), a opção mais simples é uma página estática com FastAPI + Jinja2:
 
-python -m enricher eval --file mentors.txt
-# → roda F4 para lista de nomes em arquivo
-# → gera relatório em eval_results.json
-```
+- `GET /` — formulário com campo nome + botão
+- `POST /search` → redireciona para `/results/{id}`
+- `GET /results/{id}` — exibe score, LinkedIn, notícias, alerta
 
-**Motivação do CLI:** a usuária é não-técnica, mas o MVP é usado por quem faz o setup (desenvolvedor ou time de produto). O CLI permite rodar o pipeline, validar os primeiros 20 casos da F4, e iterar antes de expor para o time de operações.
-
----
-
-### Pós-MVP: Web UI (quando Connect Endeavor não suportar integração nativa)
-
-Se a validação da suposição crítica 4 confirmar que integração nativa com Connect Endeavor não é viável, o fallback é uma web UI mínima para a usuária acionar o pipeline sem sair do browser.
-
-**Stack:** FastAPI + Jinja2 (server-rendered). Sem JavaScript framework — a operação é simples o suficiente para HTML com HTMX.
-
-**Rotas (todas server-rendered):**
-
-| Método | Path | Página | Responsabilidade |
-|---|---|---|---|
-| `GET` | `/` | `index.html` | Campo de busca: input nome + botão |
-| `POST` | `/search` | redirect → `/results/{id}` | Dispara pipeline, redireciona |
-| `GET` | `/results/{id}` | `results.html` | Exibe score, LinkedIn, notícias, alerta |
-| `GET` | `/history` | `history.html` | Lista todos os runs (para o time) |
-
-**Split server / client:**
-
-| Camada | Tecnologia | O que roda lá |
-|---|---|---|
-| Server | FastAPI + Jinja2 | Renderiza HTML com dados do banco |
-| Client | HTML + HTMX | Polling de status se pipeline for async |
-
-**Por que não Next.js / React:** a usuária não precisa de reatividade — ela submete um nome e vê um resultado. Server-rendering com Jinja2 elimina build pipeline, deploy separado e complexidade desnecessária para o problema.
-
-**Por que HTMX e não JavaScript puro:** se o pipeline demorar (até 5 min por F4), um polling simples de status evita tela em branco sem exigir SPA. HTMX faz isso com dois atributos HTML.
+Stack: FastAPI + Jinja2 (server-rendered, sem JavaScript framework).
 
 ---
 
 ## Fluxo de dados end-to-end
 
 ```
-Usuária digita "Ana Lima"
-        │
-        ▼
-POST /api/v1/enrichments  { "nome": "Ana Lima" }
-        │
-        ▼
-Orchestrator: asyncio.gather(
-    linkedin_discoverer("Ana Lima"),    ← SerpAPI: site:linkedin.com/in
-    news_searcher("Ana Lima")           ← SerpAPI: Google News
-)
-        │
-        ▼
-score_calculator(linkedin_result, news_results)
-→ EnrichmentResult (Pydantic validates schema)
-        │
-        ▼
-repository.save(result)
-→ INSERT INTO enrichment_runs (...)
-→ INSERT INTO news_items (...) × n
-        │
-        ▼
-Response 201: { score_geral: 75, linkedin: {...}, noticias: {...}, alerta: null }
-        │
-        ▼
-Usuária vê: score 75/100, LinkedIn encontrado (alta confiança), 4 notícias recentes
+$ python -m enricher "Ana Lima"
+       │
+       ▼
+pipeline.py: inicia timer
+       │
+       ├─ linkedin.py:
+       │    Playwright headed abre browser
+       │    Navega para google.com
+       │    Busca: "Ana Lima" site:linkedin.com/in
+       │    Captura primeiro resultado relevante
+       │    Avalia confiança (1 resultado claro → alta; múltiplos → média/baixa)
+       │    Retorna LinkedInResult
+       │
+       ├─ news.py:
+       │    httpx GET duckduckgo.com?q="Ana Lima"&ia=news
+       │    BS4 parseia cards de notícias
+       │    Extrai título, data, url, snippet
+       │    Retorna List[NewsItem]
+       │
+       ├─ scorer.py:
+       │    Aplica critérios do PRD (F3)
+       │    score = 0 se nenhuma fonte encontrada
+       │    Gera alerta quando necessário
+       │    Retorna EnrichmentResult
+       │
+       ├─ db.py:
+       │    upsert mentors (name UNIQUE)
+       │    INSERT enrichment_runs
+       │    INSERT news_items × n
+       │
+       └─ __main__.py:
+            Imprime JSON formatado
+            Exibe tempo de execução
 ```
