@@ -140,7 +140,14 @@ function evaluateDataQuality(mentor, newsItems) {
 
 function parseAiResponse(raw) {
   // Strip optional ```json ... ``` wrappers
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  // If still not valid JSON, try to extract the first {...} block
+  if (!cleaned.startsWith('{')) {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) cleaned = match[0];
+  }
+
   return JSON.parse(cleaned);
 }
 
