@@ -218,4 +218,5 @@ app.post('/api/enrich/:id/synthesize', async (req, res) => {
 
 // ---------------------------------------------------------------------------
 initDb();
-app.listen(3000, () => console.log('Enricher online at http://localhost:3000'));
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`Enricher online at http://localhost:${PORT}`));
