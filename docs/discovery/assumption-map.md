@@ -6,18 +6,33 @@
 
 ## Críticas — validar antes de codar
 
-### 1. LinkedIn pode ser acessado programaticamente
+### 1. LinkedIn e notícias são acessíveis programaticamente e se complementam
 
-**O que assumimos:** é possível extrair dados estruturados do LinkedIn (cargo, histórico, empresas) a partir de um nome, de forma confiável e dentro da lei.
+**O que assumimos:** é possível extrair dados estruturados do LinkedIn (cargo, histórico, empresas) e de notícias/artigos públicos sobre o mentor e suas empresas — e que as duas fontes juntas cobrem o que cada uma isolada não cobre. Se o LinkedIn for escasso, notícias compensam. Se não houver notícias, o LinkedIn sustenta o perfil sozinho.
 
-**Por que é arriscado:** LinkedIn bloqueia scraping ativamente. A API oficial não cobre perfis de terceiros. Serviços terceiros (Proxycurl, PhantomBuster, etc.) existem mas têm custo, limites e podem ser descontinuados.
+**Por que é arriscado:** LinkedIn bloqueia scraping ativamente; serviços terceiros (Proxycurl, PhantomBuster) têm custo e limites. Notícias dependem de visibilidade pública — mentores de perfil baixo podem não ter cobertura relevante. Se as duas fontes falharem ao mesmo tempo para o mesmo mentor, o perfil fica vazio.
 
 | Campo | Valor |
 |---|---|
 | Risco | Alto |
 | Certeza atual | Baixa |
-| Como validar | Testar 3 abordagens em paralelo: API oficial, serviço terceiro (Proxycurl), scraping direto. Medir cobertura e custo por perfil. |
+| Como validar | Testar acesso ao LinkedIn (API oficial, Proxycurl, scraping) e a notícias (Google News, Bing News API, busca direta) para 15 mentores da rede. Medir: cobertura por fonte isolada e cobertura combinada. Identificar em quantos casos as duas falham ao mesmo tempo. |
 | Prazo | 2 dias |
+
+---
+
+### 1b. O fallback entre fontes produz perfis de qualidade comparável
+
+**O que assumimos:** um perfil gerado só com LinkedIn (sem notícias) ou só com notícias (sem LinkedIn estruturado) ainda é útil o suficiente para a usuária confiar — mesmo sendo menos completo do que o perfil com as duas fontes.
+
+**Por que é arriscado:** se o fallback produzir um perfil visivelmente inferior, a usuária vai desconfiar do sistema toda vez que não souber qual fonte foi usada. A confiança precisa ser consistente independente do caminho percorrido.
+
+| Campo | Valor |
+|---|---|
+| Risco | Médio |
+| Certeza atual | Baixa |
+| Como validar | Gerar três versões do mesmo perfil para 5 mentores: só LinkedIn, só notícias, combinado. Mostrar as três para a usuária sem identificar qual é qual. Avaliar se ela consegue usar as versões parciais ou se só confia na combinada. |
+| Prazo | 2 dias (após validação da suposição 1) |
 
 ---
 
@@ -143,18 +158,18 @@
 
 ---
 
-### 10. Notícias e eventos recentes são findáveis e relevantes para a maioria dos mentores
+### 10. Notícias sobre o mentor e suas empresas têm sinal útil — não só ruído
 
-**O que assumimos:** busca em Google News, portais de negócios e redes sociais vai retornar eventos recentes úteis (nova empresa, cargo, artigo publicado) — não só ruído ou silêncio.
+**O que assumimos:** busca em Google News, portais de negócios e redes sociais vai retornar eventos com sinal real: nova empresa fundada, cargo assumido, entrevista concedida, empresa do portfólio com movimento relevante. E que esse sinal complementa (ou substitui) o que o LinkedIn não conta.
 
-**Por que é arriscado:** para mentores sem alta visibilidade pública, "eventos recentes" pode não existir. Ou pode existir mas ser irrelevante (ex: comment em post de terceiro, notícia sobre empresa que não tem relação com a área dele).
+**Por que é arriscado:** para mentores sem alta visibilidade pública, o resultado pode ser silêncio ou ruído (menção periférica em notícia sobre terceiro, dado desatualizado de 2015). O sistema precisa saber distinguir sinal de ruído — e isso é mais difícil do que coletar.
 
 | Campo | Valor |
 |---|---|
 | Risco | Médio |
 | Certeza atual | Média |
-| Como validar | Buscar eventos recentes de 10 mentores da rede via Google News + busca direta. Medir: quantos têm algo relevante nos últimos 12 meses? |
-| Prazo | 1 dia |
+| Como validar | Buscar notícias de 15 mentores da rede (mesma amostra da suposição 1). Para cada resultado, classificar manualmente: "sinal útil", "ruído" ou "sem resultado". Meta mínima: 60% dos mentores com ao menos um sinal útil. Pode ser feito junto com a validação da suposição 1. |
+| Prazo | 1 dia (paralelo à suposição 1) |
 
 ---
 
@@ -194,7 +209,8 @@
 
 | # | Suposição | Risco | Certeza | Prioridade |
 |---|---|---|---|---|
-| 1 | LinkedIn é acessível programaticamente | Alto | Baixa | **Crítica** |
+| 1 | LinkedIn e notícias são acessíveis e se complementam | Alto | Baixa | **Crítica** |
+| 1b | Fallback entre fontes produz perfil de qualidade comparável | Médio | Baixa | **Crítica** |
 | 2 | Nome é suficiente para identificar o mentor | Alto | Baixa | **Crítica** |
 | 3 | Dados públicos revelam autoridade real | Alto | Baixa | **Crítica** |
 | 4 | Connect Endeavor tem rota de integração | Alto | Baixa | **Crítica** |
@@ -203,6 +219,6 @@
 | 7 | Fontes constroem confiança, não fricção | Médio | Média | Logo |
 | 8 | Dor é frequente o suficiente para adoção | Médio | Média | Logo |
 | 9 | Perfil ruim queima confiança definitivamente | Alto | Alta | Logo |
-| 10 | Eventos recentes são findáveis e relevantes | Médio | Média | Logo |
+| 10 | Notícias têm sinal útil — não só ruído | Médio | Média | Logo |
 | 11 | Qualidade do match percebida pelo empreendedor melhora | Baixo | Baixa | Depois |
 | 12 | Adoção se espalha para todo o time | Médio | Baixa | Depois |
