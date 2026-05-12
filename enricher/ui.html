@@ -3,298 +3,437 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Enricher</title>
+  <title>Enricher — Mentores</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #1c2128;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --blue:      #58a6ff;
+      --green:     #3fb950;
+      --yellow:    #e3b341;
+      --orange:    #d29922;
+      --red:       #f85149;
+      --radius:    6px;
+    }
+
+    html, body { height: 100%; }
+
     body {
-      background: #0d1117;
-      color: #e6edf3;
+      background: var(--bg);
+      color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 240px 1fr 220px;
+      grid-template-rows: 100vh;
+      overflow: hidden;
     }
-    .placeholder {
-      text-align: center;
-      color: #8b949e;
+
+    .panel { overflow-y: auto; padding: 16px; border-right: 1px solid var(--border); }
+    .panel:last-child { border-right: none; }
+
+    h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
+    a  { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    button {
+      display: block; width: 100%;
+      padding: 7px 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text);
+      font-size: 13px; cursor: pointer; text-align: left;
+      margin-bottom: 6px; transition: background .15s;
     }
-    .placeholder h1 {
-      font-size: 24px;
-      font-weight: 600;
-      color: #58a6ff;
-      margin-bottom: 8px;
+    button:hover:not(:disabled) { background: var(--surface); border-color: var(--blue); }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    button.primary { background: #238636; border-color: #2ea043; color: #fff; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: #2ea043; }
+    button.danger  { color: var(--red); }
+    button.danger:hover:not(:disabled) { border-color: var(--red); background: #2d1117; }
+
+    input[type="text"] {
+      width: 100%; padding: 7px 10px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 14px;
+      margin-bottom: 10px; outline: none;
     }
+    input[type="text"]:focus { border-color: var(--blue); }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+
+    .mentor-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 10px; border-radius: var(--radius);
+      cursor: pointer; border: 1px solid transparent; margin-bottom: 4px;
+    }
+    .mentor-item:hover  { background: var(--surface); }
+    .mentor-item.active { background: var(--surface); border-color: var(--blue); }
+    .mentor-name { font-size: 13px; font-weight: 500; }
+    .score-badge { font-size: 12px; font-weight: 700; padding: 2px 7px; border-radius: 20px; background: var(--surface2); }
+    .score-high { color: var(--green); }
+    .score-mid  { color: var(--yellow); }
+    .score-low  { color: var(--red); }
+
+    .section { margin-bottom: 24px; }
+    .section-title {
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em;
+      margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }
+
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 20px; margin: 2px 2px 2px 0;
+    }
+    .badge-green  { background: #0d2b10; color: var(--green);  border: 1px solid #1a4b1c; }
+    .badge-yellow { background: #2d1f00; color: var(--yellow); border: 1px solid #4a3800; }
+    .badge-orange { background: #2d1a00; color: var(--orange); border: 1px solid #5a3500; }
+    .badge-gray   { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+    .badge-blue   { background: #051d3a; color: var(--blue);  border: 1px solid #0d3a6e; }
+    .badge-red    { background: #2d0a0a; color: var(--red);   border: 1px solid #5c1515; }
+
+    .score-number { font-size: 40px; font-weight: 700; line-height: 1; }
+    .alerta-box {
+      padding: 8px 12px; background: #2d1f00; border: 1px solid #4a3800;
+      border-radius: var(--radius); color: var(--yellow); font-size: 13px; margin-top: 8px;
+    }
+    .tldr { font-size: 16px; font-weight: 600; color: var(--blue); line-height: 1.5; margin-bottom: 12px; }
+
+    .timeline-item { display: grid; grid-template-columns: 50px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .timeline-item:last-child { border-bottom: none; }
+    .timeline-year  { font-size: 12px; font-weight: 700; color: var(--muted); padding-top: 2px; }
+    .timeline-event { font-size: 13px; line-height: 1.5; }
+
+    .news-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .news-item:last-child { border-bottom: none; }
+    .news-meta { font-size: 11px; color: var(--muted); }
+
+    .log-line { font-size: 12px; font-family: monospace; padding: 3px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+    .log-line.ok   { color: var(--green); }
+    .log-line.err  { color: var(--red); }
+    .log-line.done { color: var(--blue); font-weight: 700; }
+
+    .empty { text-align: center; color: var(--muted); padding: 40px 16px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <div class="placeholder">
-    <h1>Enricher online</h1>
-    <p>Interface em construção — tarefas 02–07</p>
+
+<aside class="panel" id="panel-left">
+  <h2>Mentores</h2>
+  <div id="mentor-list"></div>
+  <button class="primary" id="btn-new" style="margin-top:12px;">+ Enriquecer novo</button>
+</aside>
+
+<main class="panel" id="panel-center">
+  <div id="center-content">
+    <div class="empty">Selecione um mentor ou enriqueça um novo.</div>
   </div>
-  <div id="app">
-    <section id="news-section" style="
-      width: 100%;
-      max-width: 720px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-    ">
-      <h2 style="color:#58a6ff; margin-bottom:1rem; font-size:18px;">Buscar notícias de mentor</h2>
+</main>
 
-      <div style="display:flex; gap:.5rem; margin-bottom:1.5rem;">
-        <input
-          id="mentor-name"
-          type="text"
-          placeholder="Nome do mentor"
-          style="
-            flex:1;
-            padding:.5rem .75rem;
-            background:#161b22;
-            border:1px solid #30363d;
-            border-radius:6px;
-            color:#e6edf3;
-            font-size:14px;
-            outline:none;
-          "
-        />
-        <button
-          id="btn-enrich"
-          style="
-            padding:.5rem 1rem;
-            background:#238636;
-            border:none;
-            border-radius:6px;
-            color:#fff;
-            font-size:14px;
-            cursor:pointer;
-          "
-        >Buscar notícias</button>
-      </div>
-
-      <div id="news-status" style="color:#8b949e; margin-bottom:.75rem; font-size:13px;"></div>
-
-      <ul id="news-list" style="list-style:none; display:flex; flex-direction:column; gap:.75rem;"></ul>
-    </section>
-
-    <!-- Seção Síntese AI -->
-    <section id="synthesis-section" style="width:100%; max-width:720px; margin:2rem auto; padding:0 1rem; display:none;">
-      <h2 style="color:#58a6ff; margin-bottom:1rem; font-size:18px;">Perfil AI</h2>
-      <div id="synthesis-result"></div>
-    </section>
+<aside class="panel" id="panel-right">
+  <h2>Ações</h2>
+  <div id="action-buttons">
+    <div class="empty" style="padding:20px 0;">Selecione um mentor.</div>
   </div>
+</aside>
 
-  <script type="module">
-    const btnEnrich        = document.getElementById('btn-enrich');
-    const inputName        = document.getElementById('mentor-name');
-    const statusEl         = document.getElementById('news-status');
-    const newsList         = document.getElementById('news-list');
-    const synthesisSection = document.getElementById('synthesis-section');
-    const synthesisResult  = document.getElementById('synthesis-result');
+<script type="module">
+let activeMentor   = null;
+let activeStream   = null;
+let activeMentorId = null;
 
-    btnEnrich.addEventListener('click', async () => {
-      const name = inputName.value.trim();
-      if (!name) { statusEl.textContent = 'Informe o nome do mentor.'; return; }
+// ── Routing ──────────────────────────────────────────────────────────────────
+window.addEventListener('hashchange', route);
+window.addEventListener('load', () => { loadMentorList(); route(); });
 
-      btnEnrich.disabled = true;
-      statusEl.textContent = 'Buscando notícias…';
-      newsList.innerHTML = '';
+function route() {
+  const hash = location.hash || '#/';
+  if (hash === '#/enrich')               renderEnrich();
+  else if (hash.startsWith('#/mentor/')) renderMentor(Number(hash.split('/')[2]));
+  else                                   renderWelcome();
+}
 
-      try {
-        const res  = await fetch('/api/enrich', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        const data = await res.json();
+// ── API ──────────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  if (res.status === 204) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Erro desconhecido');
+  return data;
+}
 
-        if (!res.ok) { statusEl.textContent = `Erro: ${data.error}`; return; }
+// ── Mentor list ──────────────────────────────────────────────────────────────
+async function loadMentorList() {
+  try {
+    const mentors = await api('GET', '/api/mentors');
+    const list = document.getElementById('mentor-list');
+    list.innerHTML = '';
+    if (!mentors.length) {
+      list.innerHTML = '<div class="empty" style="padding:16px 0;">Nenhum mentor ainda.</div>';
+      return;
+    }
+    for (const m of mentors) {
+      const div = document.createElement('div');
+      div.className = 'mentor-item' + (m.id === activeMentorId ? ' active' : '');
+      div.dataset.id = m.id;
+      const sc = m.score ?? 0;
+      const cls = sc >= 60 ? 'score-high' : sc >= 30 ? 'score-mid' : 'score-low';
+      div.innerHTML = `<span class="mentor-name">${esc(m.name)}</span><span class="score-badge ${cls}">${sc}</span>`;
+      div.addEventListener('click', () => { location.hash = '#/mentor/' + m.id; });
+      list.appendChild(div);
+    }
+  } catch {}
+}
 
-        const { news = [], mentorId } = data;
-        statusEl.textContent = news.length
-          ? `${news.length} notícia(s) encontrada(s) — ID mentor: ${mentorId}`
-          : 'Nenhuma notícia encontrada.';
+document.getElementById('btn-new').addEventListener('click', () => { location.hash = '#/enrich'; });
 
-        // Offer "Sintetizar perfil" button when we have a mentorId
-        if (mentorId) {
-          synthesisSection.style.display = 'block';
-          synthesisResult.innerHTML = `
-            <button
-              id="btn-synthesize"
-              data-mentor-id="${mentorId}"
-              style="
-                padding:.5rem 1rem;
-                background:#1f6feb;
-                border:none;
-                border-radius:6px;
-                color:#fff;
-                font-size:14px;
-                cursor:pointer;
-                margin-bottom:1rem;
-              "
-            >Sintetizar perfil</button>
-            <div id="synthesis-status" style="color:#8b949e; font-size:13px;"></div>
-          `;
-          document.getElementById('btn-synthesize').addEventListener('click', () => runSynthesize(mentorId));
-        }
+// ── Welcome ──────────────────────────────────────────────────────────────────
+function renderWelcome() {
+  activeMentorId = null;
+  setCenter('<div class="empty">Selecione um mentor ou enriqueça um novo.</div>');
+  setActions(null);
+}
 
-        for (const item of news) {
-          const li = document.createElement('li');
-          li.style.cssText = `
-            background:#161b22;
-            border:1px solid #30363d;
-            border-radius:8px;
-            padding:.75rem 1rem;
-          `;
-          li.innerHTML = `
-            <div style="margin-bottom:.25rem;">
-              <a href="${escHtml(item.url)}" target="_blank" rel="noopener"
-                 style="color:#58a6ff; text-decoration:none; font-weight:600; font-size:14px;">
-                ${escHtml(item.title)}
-              </a>
-            </div>
-            <div style="font-size:12px; color:#8b949e; margin-bottom:.35rem;">
-              ${item.date ? escHtml(item.date) : 'Data desconhecida'}
-              &nbsp;·&nbsp;
-              <span style="
-                background:${item.source === 'bing' ? '#1f3a5f' : '#3a2d00'};
-                color:${item.source === 'bing' ? '#79c0ff' : '#e3b341'};
-                border-radius:4px; padding:1px 6px; font-size:11px;
-              ">${escHtml(item.source)}</span>
-            </div>
-            ${item.snippet
-              ? `<div style="color:#c9d1d9; font-size:13px; line-height:1.5;">${escHtml(item.snippet)}</div>`
-              : ''}
-          `;
-          newsList.appendChild(li);
-        }
-      } catch (err) {
-        statusEl.textContent = `Erro de rede: ${err.message}`;
-      } finally {
-        btnEnrich.disabled = false;
+// ── Enrich form ──────────────────────────────────────────────────────────────
+function renderEnrich(prefillName) {
+  activeMentorId = null;
+  setActions(null);
+  setCenter(`
+    <div class="section">
+      <div class="section-title">Enriquecer mentor</div>
+      <label>Nome do mentor <span style="color:var(--red)">*</span></label>
+      <input type="text" id="inp-name" placeholder="Ex: Guilherme Benchimol" value="${esc(prefillName || '')}">
+      <label>LinkedIn URL <span style="color:var(--muted)">(opcional)</span></label>
+      <input type="text" id="inp-linkedin" placeholder="Deixe em branco para descoberta automática">
+      <button class="primary" id="btn-enrich" style="display:inline-block;width:auto;padding:8px 20px;margin-top:4px;">Enriquecer</button>
+    </div>
+    <div class="section" id="log-section" style="display:none;">
+      <div class="section-title">Progresso</div>
+      <div id="log-lines"></div>
+    </div>
+  `);
+  document.getElementById('inp-name').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-enrich').click(); });
+  document.getElementById('btn-enrich').addEventListener('click', startEnrich);
+  if (prefillName) document.getElementById('btn-enrich').click();
+}
+
+async function startEnrich() {
+  const name = document.getElementById('inp-name')?.value?.trim();
+  const linkedinUrl = document.getElementById('inp-linkedin')?.value?.trim() || undefined;
+  if (!name) return;
+
+  const logSection = document.getElementById('log-section');
+  const logLines   = document.getElementById('log-lines');
+  if (logSection) logSection.style.display = '';
+  if (logLines)   logLines.innerHTML = '';
+
+  const btn = document.getElementById('btn-enrich');
+  if (btn) btn.disabled = true;
+
+  function appendLog(html, cls = '') {
+    const div = document.createElement('div');
+    div.className = 'log-line' + (cls ? ' ' + cls : '');
+    div.innerHTML = html;
+    logLines?.appendChild(div);
+    logLines?.scrollTo(0, logLines.scrollHeight);
+  }
+
+  let mentorId;
+  try {
+    const res = await api('POST', '/api/enrich', { name, linkedinUrl });
+    mentorId = res.mentorId;
+  } catch (err) {
+    appendLog('✗ ' + esc(err.message), 'err');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (activeStream) { activeStream.close(); activeStream = null; }
+  const es = new EventSource('/api/enrich/' + mentorId + '/stream');
+  activeStream = es;
+
+  es.addEventListener('progress', e => {
+    const d = JSON.parse(e.data);
+    appendLog('▸ ' + esc(d.message ?? d.step), 'ok');
+  });
+  es.addEventListener('screenshot', e => {
+    const d = JSON.parse(e.data);
+    appendLog('📸 <a href="' + esc(d.url) + '" target="_blank">Screenshot diagnóstico →</a>');
+  });
+  es.addEventListener('synthesis_done', e => {
+    const d = JSON.parse(e.data);
+    const preview = d.profile?.tldr ? ': ' + esc(d.profile.tldr.slice(0, 80)) + '…' : '';
+    appendLog('✦ Síntese concluída' + preview);
+  });
+  es.addEventListener('done', e => {
+    const d = JSON.parse(e.data);
+    const alerta = d.alerta ? ' · ' + esc(d.alerta) : '';
+    appendLog('✓ Concluído! Score: ' + (d.score ?? '—') + alerta, 'done');
+    es.close(); activeStream = null;
+    if (btn) btn.disabled = false;
+    loadMentorList();
+    setTimeout(() => { location.hash = '#/mentor/' + mentorId; }, 1500);
+  });
+  es.addEventListener('error', e => {
+    try { const d = JSON.parse(e.data); appendLog('✗ ' + esc(d.message), 'err'); }
+    catch { appendLog('✗ Erro de conexão.', 'err'); }
+    es.close(); activeStream = null;
+    if (btn) btn.disabled = false;
+  });
+}
+
+// ── Mentor detail ─────────────────────────────────────────────────────────────
+async function renderMentor(id) {
+  activeMentorId = id;
+  document.querySelectorAll('.mentor-item').forEach(el => {
+    el.classList.toggle('active', Number(el.dataset.id) === id);
+  });
+  setCenter('<div class="empty">Carregando…</div>');
+  setActions(null);
+
+  let mentor;
+  try { mentor = await api('GET', '/api/mentors/' + id); }
+  catch { setCenter('<div class="empty">Mentor não encontrado.</div>'); return; }
+
+  activeMentor = mentor;
+  setCenter(buildMentorHtml(mentor));
+  setActions(mentor);
+}
+
+function buildMentorHtml(m) {
+  const profile = m.ai_profile ? tryParse(m.ai_profile) : null;
+  const sc  = m.score ?? 0;
+  const cls = sc >= 60 ? 'score-high' : sc >= 30 ? 'score-mid' : 'score-low';
+  let html  = '';
+
+  // Header
+  html += `<div class="section">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px;">
+      <span class="score-number ${cls}">${sc}</span>
+      <span style="font-size:13px;color:var(--muted);">/ 100</span>
+    </div>
+    <div style="font-size:20px;font-weight:700;">${esc(m.name)}</div>
+  </div>`;
+
+  // LinkedIn
+  html += `<div class="section"><div class="section-title">LinkedIn</div>`;
+  if (m.linkedin_url) {
+    const c  = m.linkedin_confianca ?? 'baixa';
+    const bc = c === 'alta' ? 'badge-green' : c === 'média' ? 'badge-yellow' : 'badge-orange';
+    const display = m.linkedin_url.replace('https://www.linkedin.com/in/', 'linkedin.com/in/');
+    html += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <a href="${esc(m.linkedin_url)}" target="_blank" rel="noopener" class="badge ${bc}">↗ ${esc(display)}</a>
+      <span class="badge ${bc}">confiança ${esc(c)}</span>
+    </div>`;
+  } else {
+    html += `<span class="badge badge-gray">LinkedIn não encontrado</span>`;
+  }
+  html += `</div>`;
+
+  // AI profile
+  if (profile) {
+    const dq  = profile.dataQuality ?? 'baixa';
+    const dqc = dq === 'alta' ? 'badge-green' : dq === 'média' ? 'badge-yellow' : 'badge-orange';
+    html += `<div class="section">
+      <div class="section-title">Perfil AI <span class="badge ${dqc}" style="margin-left:6px;">${esc(dq)}</span></div>`;
+    if (dq === 'baixa') html += `<div class="alerta-box" style="margin-bottom:12px;">⚠ Dados insuficientes — verificar manualmente</div>`;
+    if (profile.tldr)   html += `<div class="tldr">${esc(profile.tldr)}</div>`;
+    if (profile.topics?.length) {
+      html += `<div style="margin-bottom:12px;">`;
+      for (const t of profile.topics) html += `<span class="badge badge-blue">${esc(t)}</span>`;
+      html += `</div>`;
+    }
+    if (profile.publicVoice) {
+      html += `<p style="color:var(--muted);font-style:italic;font-size:13px;margin-bottom:12px;">${esc(profile.publicVoice)}</p>`;
+    }
+    const tl = (profile.timeline ?? []).filter(e => e.source);
+    if (tl.length) {
+      html += `<div class="section-title" style="margin-top:4px;">Timeline</div><div>`;
+      for (const e of tl) {
+        html += `<div class="timeline-item">
+          <div class="timeline-year">${esc(String(e.year ?? ''))}</div>
+          <div class="timeline-event">${esc(e.event ?? '')}
+            <a href="${esc(e.source)}" target="_blank" rel="noopener" style="margin-left:6px;font-size:11px;">[fonte →]</a>
+          </div>
+        </div>`;
       }
-    });
-
-    // Pressionar Enter no input aciona a busca
-    inputName.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') btnEnrich.click();
-    });
-
-    function escHtml(str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+      html += `</div>`;
     }
+    html += `</div>`;
+  }
 
-    async function runSynthesize(mentorId) {
-      const btn = document.getElementById('btn-synthesize');
-      const synthStatus = document.getElementById('synthesis-status');
-      if (btn) btn.disabled = true;
-      if (synthStatus) synthStatus.textContent = 'Sintetizando perfil com IA…';
-
-      try {
-        const res  = await fetch(`/api/enrich/${mentorId}/synthesize`, { method: 'POST' });
-        const data = await res.json();
-
-        if (!res.ok) {
-          if (synthStatus) synthStatus.textContent = `Erro: ${data.error}`;
-          return;
-        }
-
-        const { profile } = data;
-        if (synthStatus) synthStatus.textContent = '';
-        renderProfile(profile);
-      } catch (err) {
-        if (synthStatus) synthStatus.textContent = `Erro de rede: ${err.message}`;
-      } finally {
-        if (btn) btn.disabled = false;
-      }
+  // News
+  if (m.news?.length) {
+    html += `<div class="section"><div class="section-title">Notícias (${m.news.length})</div>`;
+    for (const n of m.news) {
+      const sc = n.source === 'bing' ? 'badge-blue' : n.source === 'google_rss' ? 'badge-yellow' : 'badge-gray';
+      html += `<div class="news-item">
+        <div style="font-size:13px;font-weight:500;margin-bottom:4px;">
+          <a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a>
+        </div>
+        <div class="news-meta">
+          ${n.date ? esc(n.date) : 'Data desconhecida'} &nbsp;·&nbsp;
+          <span class="badge ${sc}" style="font-size:10px;">${esc(n.source ?? '—')}</span>
+        </div>
+        ${n.snippet ? `<div style="color:var(--muted);font-size:12px;margin-top:4px;line-height:1.5;">${esc(n.snippet)}</div>` : ''}
+      </div>`;
     }
+    html += `</div>`;
+  } else {
+    html += `<div class="section"><div class="section-title">Notícias</div><div class="empty" style="padding:12px 0;">Nenhuma notícia encontrada.</div></div>`;
+  }
 
-    function renderProfile(profile) {
-      if (!profile) return;
+  return html;
+}
 
-      const qualityColors = { alta: '#3fb950', média: '#e3b341', baixa: '#f85149' };
-      const qualityColor  = qualityColors[profile.dataQuality] ?? '#8b949e';
+// ── Actions panel ─────────────────────────────────────────────────────────────
+function setActions(mentor) {
+  const el = document.getElementById('action-buttons');
+  if (!mentor) { el.innerHTML = '<div class="empty" style="padding:20px 0;">Selecione um mentor.</div>'; return; }
 
-      // TLDR
-      const tldrHtml = profile.tldr
-        ? `<div style="
-            background:#161b22;
-            border-left:3px solid #58a6ff;
-            border-radius:4px;
-            padding:.75rem 1rem;
-            font-size:15px;
-            color:#e6edf3;
-            font-weight:600;
-            margin-bottom:1rem;
-          ">${escHtml(profile.tldr)}</div>`
-        : '';
+  el.innerHTML = `
+    <button id="act-refresh">↺ Enriquecer (completo)</button>
+    <button id="act-linkedin">↗ Atualizar LinkedIn</button>
+    <button id="act-synthesize">✦ Re-sintetizar</button>
+    <hr style="border-color:var(--border);margin:10px 0;">
+    <button id="act-delete" class="danger">✕ Excluir mentor</button>
+  `;
 
-      // dataQuality badge
-      const qualityHtml = `<span style="
-        background:${qualityColor}22;
-        color:${qualityColor};
-        border:1px solid ${qualityColor};
-        border-radius:12px;
-        padding:2px 10px;
-        font-size:12px;
-        font-weight:600;
-        margin-bottom:1rem;
-        display:inline-block;
-      ">Qualidade: ${escHtml(profile.dataQuality ?? 'n/a')}</span>`;
+  document.getElementById('act-refresh').addEventListener('click', () => {
+    renderEnrich(mentor.name);
+  });
+  document.getElementById('act-linkedin').addEventListener('click', async () => {
+    try { await api('POST', '/api/enrich/' + mentor.id + '/linkedin'); renderMentor(mentor.id); }
+    catch (err) { alert(err.message); }
+  });
+  document.getElementById('act-synthesize').addEventListener('click', async () => {
+    try { await api('POST', '/api/enrich/' + mentor.id + '/synthesize'); renderMentor(mentor.id); }
+    catch (err) { alert(err.message); }
+  });
+  document.getElementById('act-delete').addEventListener('click', async () => {
+    if (!confirm('Excluir "' + mentor.name + '"?')) return;
+    try {
+      await api('DELETE', '/api/mentors/' + mentor.id);
+      activeMentor = null; activeMentorId = null;
+      loadMentorList(); location.hash = '#/';
+    } catch (err) { alert(err.message); }
+  });
+}
 
-      // Topics badges
-      const topicsHtml = Array.isArray(profile.topics) && profile.topics.length
-        ? `<div style="display:flex; flex-wrap:wrap; gap:.4rem; margin:1rem 0;">
-            ${profile.topics.map((t) => `<span style="
-              background:#1f3a5f;
-              color:#79c0ff;
-              border-radius:12px;
-              padding:3px 10px;
-              font-size:12px;
-            ">${escHtml(t)}</span>`).join('')}
-          </div>`
-        : '';
-
-      // Timeline
-      const timelineHtml = Array.isArray(profile.timeline) && profile.timeline.length
-        ? `<div style="margin-top:1rem;">
-            <h3 style="color:#8b949e; font-size:13px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:.5rem;">Linha do tempo</h3>
-            <ul style="list-style:none; display:flex; flex-direction:column; gap:.5rem;">
-              ${profile.timeline
-                .filter((e) => e.source)
-                .map((e) => `<li style="
-                  display:flex; gap:.75rem; align-items:baseline;
-                  background:#161b22; border:1px solid #30363d;
-                  border-radius:6px; padding:.5rem .75rem;
-                ">
-                  <span style="color:#58a6ff; font-size:12px; font-weight:700; white-space:nowrap;">${escHtml(e.year)}</span>
-                  <span style="color:#c9d1d9; font-size:13px; flex:1;">${escHtml(e.event)}</span>
-                  <a href="${escHtml(e.source)}" target="_blank" rel="noopener"
-                     style="color:#8b949e; font-size:11px; white-space:nowrap; text-decoration:none;">↗ fonte</a>
-                </li>`).join('')}
-            </ul>
-          </div>`
-        : '';
-
-      synthesisResult.innerHTML = `
-        ${tldrHtml}
-        <div style="margin-bottom:.5rem;">${qualityHtml}</div>
-        ${topicsHtml}
-        ${timelineHtml}
-        <button
-          id="btn-synthesize"
-          data-mentor-id="${synthesisResult.querySelector ? '' : ''}"
-          style="
-            display:none;
-          "
-        >Sintetizar perfil</button>
-      `;
-    }
-  </script>
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setCenter(html) { document.getElementById('center-content').innerHTML = html; }
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function tryParse(s) { try { return JSON.parse(s); } catch { return null; } }
+</script>
 </body>
 </html>
